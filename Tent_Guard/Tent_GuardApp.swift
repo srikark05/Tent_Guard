@@ -29,6 +29,7 @@ struct Tent_GuardApp: App {
             Item.self,
             Users.self,
             Tent.self,
+            BoundaryCoordinate.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 

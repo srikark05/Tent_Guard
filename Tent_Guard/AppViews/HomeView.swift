@@ -158,8 +158,7 @@ struct TentRowView: View {
         Group {
             if let tent = tent {
                 NavigationLink {
-                    Text("Tent Details: \(tent.tent_name)")
-                        .navigationTitle(tent.tent_name)
+                    TentGeo_View(tent: tent)
                 } label: {
                     HStack(spacing: 16) {
                         Image(systemName: "tent.fill")
