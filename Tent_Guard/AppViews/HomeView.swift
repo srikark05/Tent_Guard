@@ -18,8 +18,8 @@ struct HomeView: View {
     
     var body: some View {
         Group {
-            if isAuthenticated {
-                if let user = currentUser, !user.tent_id.isEmpty {
+            if isAuthenticated, let user = currentUser {
+                if !user.tent_id.isEmpty {
                     // User has tents - show main tent view
                     mainTentView
                 } else {
@@ -29,7 +29,7 @@ struct HomeView: View {
                     }
                 }
             } else {
-                // Not authenticated - show auth view
+                // Not authenticated or no user found - show auth view
                 NavigationStack {
                     AuthenticationView()
                 }
@@ -123,7 +123,6 @@ struct HomeView: View {
             return
         }
         
-        isAuthenticated = true
         let uid = firebaseUser.uid
         
         // Find user in SwiftData
@@ -132,7 +131,15 @@ struct HomeView: View {
         )
         
         if let user = try? modelContext.fetch(descriptor).first {
+            // User exists in SwiftData - authenticated
             currentUser = user
+            isAuthenticated = true
+        } else {
+            // Firebase user exists but no SwiftData user - not fully set up
+            // This could happen if user signed up but didn't complete profile
+            // For now, treat as not authenticated
+            isAuthenticated = false
+            currentUser = nil
         }
     }
     
@@ -158,7 +165,7 @@ struct TentRowView: View {
         Group {
             if let tent = tent {
                 NavigationLink {
-                    TentGeo_View(tent: tent)
+                    TentDetailContainerView(tent: tent)
                 } label: {
                     HStack(spacing: 16) {
                         Image(systemName: "tent.fill")
@@ -173,7 +180,7 @@ struct TentRowView: View {
                                 .font(.headline)
                                 .foregroundColor(.primary)
                             
-                            Text("\(tent.tent_users.count) / \(tent.tent_capacity) members")
+                            Text("\(tent.tent_users.count) / \(tent.tent_required_count) members")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }

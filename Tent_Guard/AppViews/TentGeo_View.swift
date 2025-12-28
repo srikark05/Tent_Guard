@@ -11,6 +11,7 @@ import SwiftData
 import CoreLocation
 import FirebaseAuth
 import FirebaseFirestore
+import Combine
 
 struct TentGeo_View: View {
     let tent: Tent
@@ -21,6 +22,7 @@ struct TentGeo_View: View {
     @State private var memberUsers: [Users] = []
     @State private var isLoadingLocations = false
     @State private var refreshTimer: Timer?
+    @State private var hasAdjustedRegionForUserLocation = false // Track if we've adjusted region for user location
     
     // Drawing mode state
     @State private var isDrawingMode = false
@@ -56,7 +58,12 @@ struct TentGeo_View: View {
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Map View with Custom Boundary and Member Locations
+                // Capacity Indicator at Top
+                capacityIndicator
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                
+                // Map View with Custom Boundary and Member Locations - takes full remaining space
                 MapWithBoundaryOverlay(
                     tent: tent,
                     region: $region,
@@ -81,180 +88,200 @@ struct TentGeo_View: View {
                         isDrawing = false
                     }
                 )
-                .overlay(
-                    // Map Controls
-                    VStack {
-                        HStack {
-                            Spacer()
-                            VStack(spacing: 8) {
-                                // Zoom In Button
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .topTrailing) {
+                    // Map Controls (Zoom buttons and Location button) - only show when not in drawing mode
+                    if !isDrawingMode {
+                        VStack(spacing: 8) {
+                            // Center on User Location Button
+                            if locationService.currentLocation != nil {
                                 Button(action: {
-                                    withAnimation {
-                                        let newSpan = MKCoordinateSpan(
-                                            latitudeDelta: max(region.span.latitudeDelta * 0.5, 0.001),
-                                            longitudeDelta: max(region.span.longitudeDelta * 0.5, 0.001)
-                                        )
-                                        region = MKCoordinateRegion(center: region.center, span: newSpan)
+                                    if let userLocation = locationService.currentLocation {
+                                        withAnimation {
+                                            region = MKCoordinateRegion(
+                                                center: userLocation.coordinate,
+                                                span: MKCoordinateSpan(latitudeDelta: 0.005, longitudeDelta: 0.005)
+                                            )
+                                        }
                                     }
                                 }) {
-                                    Image(systemName: "plus")
+                                    Image(systemName: "location.fill")
                                         .font(.system(size: 18, weight: .semibold))
-                                        .foregroundColor(.primary)
-                                        .frame(width: 44, height: 44)
-                                        .background(Color(.systemBackground))
-                                        .clipShape(Circle())
-                                        .shadow(radius: 5)
-                                }
-                                
-                                // Zoom Out Button
-                                Button(action: {
-                                    withAnimation {
-                                        let newSpan = MKCoordinateSpan(
-                                            latitudeDelta: min(region.span.latitudeDelta * 2, 180.0),
-                                            longitudeDelta: min(region.span.longitudeDelta * 2, 180.0)
-                                        )
-                                        region = MKCoordinateRegion(center: region.center, span: newSpan)
-                                    }
-                                }) {
-                                    Image(systemName: "minus")
-                                        .font(.system(size: 18, weight: .semibold))
-                                        .foregroundColor(.primary)
+                                        .foregroundColor(.blue)
                                         .frame(width: 44, height: 44)
                                         .background(Color(.systemBackground))
                                         .clipShape(Circle())
                                         .shadow(radius: 5)
                                 }
                             }
-                            .padding(.trailing, 16)
-                            .padding(.top, 16)
-                        }
-                        Spacer()
-                    }
-                )
-                
-                // Info Card at Bottom
-                VStack(spacing: 12) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(tent.tent_name)
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .foregroundColor(.primary)
                             
-                            Text("Tent Pin: \(tent.tent_pin)")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                            // Zoom In Button
+                            Button(action: {
+                                withAnimation {
+                                    let newSpan = MKCoordinateSpan(
+                                        latitudeDelta: max(region.span.latitudeDelta * 0.5, 0.001),
+                                        longitudeDelta: max(region.span.longitudeDelta * 0.5, 0.001)
+                                    )
+                                    region = MKCoordinateRegion(center: region.center, span: newSpan)
+                                }
+                            }) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                    .frame(width: 44, height: 44)
+                                    .background(Color(.systemBackground))
+                                    .clipShape(Circle())
+                                    .shadow(radius: 5)
+                            }
+                            
+                            // Zoom Out Button
+                            Button(action: {
+                                withAnimation {
+                                    let newSpan = MKCoordinateSpan(
+                                        latitudeDelta: min(region.span.latitudeDelta * 2, 180.0),
+                                        longitudeDelta: min(region.span.longitudeDelta * 2, 180.0)
+                                    )
+                                    region = MKCoordinateRegion(center: region.center, span: newSpan)
+                                }
+                            }) {
+                                Image(systemName: "minus")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                    .frame(width: 44, height: 44)
+                                    .background(Color(.systemBackground))
+                                    .clipShape(Circle())
+                                    .shadow(radius: 5)
+                            }
                         }
-                        
-                        Spacer()
-                        
-                        // Boundary Status Indicator
-                        VStack(spacing: 4) {
-                            ZStack {
-                                Circle()
-                                    .fill(boundaryPoints.isEmpty ? Color.red.opacity(0.2) : Color.green.opacity(0.2))
-                                    .frame(width: 50, height: 50)
+                        .padding(.trailing, 16)
+                        .padding(.top, 16)
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    // Info Card at Bottom
+                    VStack(spacing: 12) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(tent.tent_name)
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.primary)
+                            }
+                            
+                            Spacer()
+                            
+                            // Boundary Status Indicator
+                            VStack(spacing: 4) {
+                                ZStack {
+                                    Circle()
+                                        .fill(boundaryPoints.isEmpty ? Color.red.opacity(0.2) : Color.green.opacity(0.2))
+                                        .frame(width: 50, height: 50)
+                                    
+                                    Image(systemName: boundaryPoints.isEmpty ? "location.circle.fill" : "checkmark.circle.fill")
+                                        .font(.system(size: 30))
+                                        .foregroundColor(boundaryPoints.isEmpty ? .red : .green)
+                                }
                                 
-                                Image(systemName: boundaryPoints.isEmpty ? "location.circle.fill" : "checkmark.circle.fill")
-                                    .font(.system(size: 30))
+                                Text(boundaryPoints.isEmpty ? "200 m" : "Custom")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
                                     .foregroundColor(boundaryPoints.isEmpty ? .red : .green)
                             }
                             
-                            Text(boundaryPoints.isEmpty ? "200 m" : "Custom")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(boundaryPoints.isEmpty ? .red : .green)
-                        }
-                        
-                        // Edit Boundary Button
-                        Button(action: {
-                            withAnimation {
-                                isDrawingMode.toggle()
-                                if !isDrawingMode {
-                                    isDrawing = false
+                            // Edit Boundary Button
+                            Button(action: {
+                                withAnimation {
+                                    isDrawingMode.toggle()
+                                    if !isDrawingMode {
+                                        isDrawing = false
+                                    }
                                 }
+                            }) {
+                                Image(systemName: isDrawingMode ? "checkmark.circle.fill" : "pencil.circle.fill")
+                                    .font(.system(size: 24))
+                                    .foregroundColor(isDrawingMode ? .green : .blue)
+                                    .frame(width: 44, height: 44)
+                                    .background(Color(.systemBackground))
+                                    .clipShape(Circle())
+                                    .shadow(radius: 5)
                             }
-                        }) {
-                            Image(systemName: isDrawingMode ? "checkmark.circle.fill" : "pencil.circle.fill")
-                                .font(.system(size: 24))
-                                .foregroundColor(isDrawingMode ? .green : .blue)
-                                .frame(width: 44, height: 44)
-                                .background(Color(.systemBackground))
-                                .clipShape(Circle())
-                                .shadow(radius: 5)
+                            .padding(.leading, 12)
                         }
-                        .padding(.leading, 12)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
+                    .background(
+                        Color(.systemBackground)
+                            .shadow(color: .black.opacity(0.1), radius: 10, y: -5)
+                    )
                 }
-                .background(
-                    Color(.systemBackground)
-                        .shadow(color: .black.opacity(0.1), radius: 10, y: -5)
-                )
-                
-                // Drawing Mode Controls
-                if isDrawingMode {
-                    VStack(spacing: 12) {
-                        HStack(spacing: 12) {
-                            Button(action: {
-                                boundaryPoints.removeAll()
-                                isDrawing = false
-                            }) {
-                                HStack {
-                                    Image(systemName: "trash")
-                                    Text("Clear")
-                                }
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
-                                .background(Color.red)
-                                .cornerRadius(10)
-                            }
-                            
-                            Button(action: {
-                                if !boundaryPoints.isEmpty {
-                                    saveBoundary()
-                                }
-                            }) {
-                                HStack {
-                                    Image(systemName: "checkmark")
-                                    Text("Save Boundary")
-                                }
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
-                                .background(boundaryPoints.isEmpty ? Color.gray : Color.green)
-                                .cornerRadius(10)
-                            }
-                            .disabled(boundaryPoints.isEmpty || isSaving)
-                            
-                            Button(action: {
-                                isDrawingMode = false
-                                isDrawing = false
-                            }) {
-                                Text("Cancel")
+                .overlay(alignment: .top) {
+                    // Drawing Mode Controls - positioned near top when active
+                    if isDrawingMode {
+                        VStack(spacing: 12) {
+                            HStack(spacing: 12) {
+                                Button(action: {
+                                    boundaryPoints.removeAll()
+                                    isDrawing = false
+                                }) {
+                                    HStack {
+                                        Image(systemName: "trash")
+                                        Text("Clear")
+                                    }
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(.white)
                                     .padding(.horizontal, 20)
                                     .padding(.vertical, 12)
-                                    .background(Color(.systemGray5))
+                                    .background(Color.red)
                                     .cornerRadius(10)
+                                }
+                                
+                                Button(action: {
+                                    if !boundaryPoints.isEmpty {
+                                        saveBoundary()
+                                    }
+                                }) {
+                                    HStack {
+                                        Image(systemName: "checkmark")
+                                        Text("Save Boundary")
+                                    }
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
+                                    .background(boundaryPoints.isEmpty ? Color.gray : Color.green)
+                                    .cornerRadius(10)
+                                }
+                                .disabled(boundaryPoints.isEmpty || isSaving)
+                                
+                                Button(action: {
+                                    isDrawingMode = false
+                                    isDrawing = false
+                                }) {
+                                    Text("Cancel")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.primary)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 12)
+                                        .background(Color(.systemGray5))
+                                        .cornerRadius(10)
+                                }
                             }
+                            
+                            Text(isDrawing ? "Drawing boundary..." : "Drag your finger on the map to draw the boundary")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
-                        
-                        Text(isDrawing ? "Drawing boundary..." : "Drag your finger on the map to draw the boundary")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
+                        .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
+                        .padding(.top, 100) // Position below the capacity indicator
+                        .padding(.horizontal, 16)
                     }
-                    .padding()
-                    .background(Color(.systemBackground))
-                    .shadow(color: .black.opacity(0.1), radius: 10, y: -5)
                 }
             }
         }
@@ -272,12 +299,20 @@ struct TentGeo_View: View {
             }
         }
         .onAppear {
+            // Request location permission and start tracking
+            locationService.requestLocationPermission()
             loadMemberLocations()
             startLocationTracking()
             
             // Refresh member locations every 30 seconds
             refreshTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { _ in
                 loadMemberLocations()
+            }
+        }
+        .onReceive(locationService.$currentLocation) { userLocation in
+            // When user location becomes available, optionally adjust map to show both tent and user location
+            if let location = userLocation {
+                updateRegionToIncludeUserLocation(location.coordinate)
             }
         }
         .onDisappear {
@@ -292,6 +327,12 @@ struct TentGeo_View: View {
         
         // Get all member Firebase UIDs from tent
         var firebaseUIDs: [String] = []
+        
+        // Get current user's Firebase UID to include their location
+        var currentUserFirebaseUID: String?
+        if let firebaseUser = AuthenticationManager.shared.currentUser {
+            currentUserFirebaseUID = firebaseUser.uid
+        }
         
         // Get leader IDs
         for leaderID in tent.leader_id {
@@ -321,6 +362,19 @@ struct TentGeo_View: View {
             }
         }
         
+        // Ensure current user is included
+        if let currentUID = currentUserFirebaseUID, !firebaseUIDs.contains(currentUID) {
+            firebaseUIDs.append(currentUID)
+            // Also add current user to memberUsers if not already there
+            let currentUserDescriptor = FetchDescriptor<Users>(
+                predicate: #Predicate<Users> { $0.firebaseUID == currentUID }
+            )
+            if let currentUser = try? modelContext.fetch(currentUserDescriptor).first,
+               !memberUsers.contains(where: { $0.user_id == currentUser.user_id }) {
+                memberUsers.append(currentUser)
+            }
+        }
+        
         // Fetch locations from Firestore
         Task {
             do {
@@ -338,6 +392,46 @@ struct TentGeo_View: View {
         }
     }
     
+    // MARK: - Polygon Helper Functions
+    
+    /// Clean and close polygon points to prevent self-intersections
+    static func cleanAndClosePolygon(_ points: [CLLocationCoordinate2D]) -> [CLLocationCoordinate2D] {
+        guard points.count >= 3 else { return points }
+        
+        var cleaned: [CLLocationCoordinate2D] = []
+        let minDistance: CLLocationDistance = 2.0 // Minimum distance in meters
+        
+        // Remove duplicate/very close points
+        for point in points {
+            if cleaned.isEmpty {
+                cleaned.append(point)
+            } else {
+                let lastPoint = cleaned.last!
+                let distance = CLLocation(latitude: lastPoint.latitude, longitude: lastPoint.longitude)
+                    .distance(from: CLLocation(latitude: point.latitude, longitude: point.longitude))
+                
+                if distance >= minDistance {
+                    cleaned.append(point)
+                }
+            }
+        }
+        
+        // Ensure we have at least 3 points
+        guard cleaned.count >= 3 else { return points }
+        
+        // Close the polygon by adding the first point at the end if it's not already there
+        let first = cleaned.first!
+        let last = cleaned.last!
+        let distanceToFirst = CLLocation(latitude: last.latitude, longitude: last.longitude)
+            .distance(from: CLLocation(latitude: first.latitude, longitude: first.longitude))
+        
+        if distanceToFirst >= minDistance {
+            cleaned.append(first)
+        }
+        
+        return cleaned
+    }
+    
     private func startLocationTracking() {
         // Get current user's Firebase UID
         guard let firebaseUser = AuthenticationManager.shared.currentUser else { return }
@@ -350,12 +444,93 @@ struct TentGeo_View: View {
         locationService.stopTrackingLocation()
     }
     
+    private func updateRegionToIncludeUserLocation(_ userCoordinate: CLLocationCoordinate2D) {
+        // Only adjust region once when location first becomes available
+        guard !hasAdjustedRegionForUserLocation else { return }
+        
+        let tentCoordinate = CLLocationCoordinate2D(
+            latitude: tent.tent_pin_latitude,
+            longitude: tent.tent_pin_longitude
+        )
+        
+        // Check if user location is already visible in current region
+        let margin: Double = 0.001 // ~100 meters
+        let isUserVisible = abs(userCoordinate.latitude - region.center.latitude) < region.span.latitudeDelta / 2 - margin &&
+                           abs(userCoordinate.longitude - region.center.longitude) < region.span.longitudeDelta / 2 - margin
+        
+        // If user location is not visible, adjust region to include both tent and user location
+        if !isUserVisible {
+            let centerLat = (tentCoordinate.latitude + userCoordinate.latitude) / 2
+            let centerLon = (tentCoordinate.longitude + userCoordinate.longitude) / 2
+            
+            // Calculate span to include both points with some padding
+            let latDelta = abs(tentCoordinate.latitude - userCoordinate.latitude) * 2.5
+            let lonDelta = abs(tentCoordinate.longitude - userCoordinate.longitude) * 2.5
+            
+            let newSpan = MKCoordinateSpan(
+                latitudeDelta: max(latDelta, 0.005),  // Minimum 500m view
+                longitudeDelta: max(lonDelta, 0.005)
+            )
+            
+            withAnimation {
+                region = MKCoordinateRegion(
+                    center: CLLocationCoordinate2D(latitude: centerLat, longitude: centerLon),
+                    span: newSpan
+                )
+            }
+        }
+        
+        hasAdjustedRegionForUserLocation = true
+    }
+    
+    // MARK: - Capacity Indicator
+    private var capacityIndicator: some View {
+        let currentCount = tent.allMemberIDs.count
+        let requiredCount = tent.tent_required_count
+        let isFullyStaffed = currentCount >= requiredCount
+        
+        return HStack(spacing: 12) {
+            Image(systemName: isFullyStaffed ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .font(.title2)
+                .foregroundColor(isFullyStaffed ? .green : .orange)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Tent Staffing")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Text("\(currentCount) / \(requiredCount) people")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(isFullyStaffed ? .green : .orange)
+            }
+            
+            Spacer()
+            
+            if !isFullyStaffed {
+                Text("\(requiredCount - currentCount) more needed")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(8)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+    
     private func saveBoundary() {
         guard !boundaryPoints.isEmpty else { return }
         isSaving = true
         
+        // Clean and close the polygon before saving
+        let cleanedPoints = TentGeo_View.cleanAndClosePolygon(boundaryPoints)
+        
         // Convert CLLocationCoordinate2D to BoundaryCoordinate objects
-        let boundaryCoords = boundaryPoints.map { coord in
+        let boundaryCoords = cleanedPoints.map { coord in
             BoundaryCoordinate(latitude: coord.latitude, longitude: coord.longitude)
         }
         
@@ -378,7 +553,7 @@ struct TentGeo_View: View {
                 let tentRef = db.collection("tents").document(firestoreTentID)
                 
                 // Convert coordinates to array of GeoPoints for Firestore
-                let geoPoints = boundaryPoints.map { GeoPoint(latitude: $0.latitude, longitude: $0.longitude) }
+                let geoPoints = cleanedPoints.map { GeoPoint(latitude: $0.latitude, longitude: $0.longitude) }
                 
                 try await tentRef.updateData([
                     "boundary_coordinates": geoPoints,
@@ -471,6 +646,7 @@ struct MapWithBoundaryOverlay: UIViewRepresentable {
         mapView.delegate = context.coordinator
         mapView.region = region
         mapView.showsUserLocation = true
+        mapView.userTrackingMode = .none  // Show user location but don't track
         context.coordinator.mapView = mapView
         context.coordinator.isDrawingMode = isDrawingMode
         context.coordinator.onDrawStart = onDrawStart
@@ -487,7 +663,8 @@ struct MapWithBoundaryOverlay: UIViewRepresentable {
         
         // Add boundary overlay (polygon if custom, circle if default)
         if !boundaryPoints.isEmpty {
-            let polygon = MKPolygon(coordinates: boundaryPoints, count: boundaryPoints.count)
+            let cleanedPoints = TentGeo_View.cleanAndClosePolygon(boundaryPoints)
+            let polygon = MKPolygon(coordinates: cleanedPoints, count: cleanedPoints.count)
             mapView.addOverlay(polygon)
         } else {
             let circle = MKCircle(
@@ -502,11 +679,13 @@ struct MapWithBoundaryOverlay: UIViewRepresentable {
         context.coordinator.memberUsers = memberUsers
         context.coordinator.addMemberAnnotations(to: mapView)
         
-        // Add pan gesture for continuous drawing
+        // Add pan gesture for continuous drawing (only active when in drawing mode)
         let panGesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
         panGesture.minimumNumberOfTouches = 1
         panGesture.maximumNumberOfTouches = 1
         panGesture.delegate = context.coordinator
+        panGesture.isEnabled = isDrawingMode  // Only enable when in drawing mode
+        context.coordinator.drawingPanGesture = panGesture
         mapView.addGestureRecognizer(panGesture)
         
         return mapView
@@ -519,6 +698,9 @@ struct MapWithBoundaryOverlay: UIViewRepresentable {
         context.coordinator.onDrawPoint = onDrawPoint
         context.coordinator.onDrawEnd = onDrawEnd
         
+        // Enable/disable drawing gesture based on drawing mode
+        context.coordinator.drawingPanGesture?.isEnabled = isDrawingMode
+        
         // Disable/enable map scrolling based on drawing mode
         mapView.isScrollEnabled = !isDrawingMode
         mapView.isZoomEnabled = !isDrawingMode
@@ -527,7 +709,8 @@ struct MapWithBoundaryOverlay: UIViewRepresentable {
         mapView.removeOverlays(mapView.overlays.filter { $0 is MKCircle || $0 is MKPolygon })
         
         if !boundaryPoints.isEmpty {
-            let polygon = MKPolygon(coordinates: boundaryPoints, count: boundaryPoints.count)
+            let cleanedPoints = TentGeo_View.cleanAndClosePolygon(boundaryPoints)
+            let polygon = MKPolygon(coordinates: cleanedPoints, count: cleanedPoints.count)
             mapView.addOverlay(polygon)
         } else {
             let annotation = TentAnnotation(tent: tent)
@@ -572,6 +755,7 @@ struct MapWithBoundaryOverlay: UIViewRepresentable {
         var memberUsers: [Users] = []
         private var memberAnnotations: [MemberAnnotation] = []
         var isDrawingMode: Bool = false
+        var drawingPanGesture: UIPanGestureRecognizer?
         var onDrawStart: (() -> Void)?
         var onDrawPoint: ((CLLocationCoordinate2D) -> Void)?
         var onDrawEnd: (() -> Void)?
@@ -618,19 +802,28 @@ struct MapWithBoundaryOverlay: UIViewRepresentable {
             }
         }
         
-        // Only recognize gesture when in drawing mode, and prevent map panning
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-            return false  // Don't allow simultaneous recognition - we want drawing to take priority
-        }
-        
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            // Only allow drawing gesture when in drawing mode
             return isDrawingMode
         }
         
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            // When in drawing mode, don't allow simultaneous recognition - drawing takes priority
+            // When NOT in drawing mode, this gesture is disabled, so map gestures work normally
+            return false
+        }
+        
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-            // Our drawing gesture should take priority over map panning when in drawing mode
-            if isDrawingMode && otherGestureRecognizer is UIPanGestureRecognizer {
-                return false  // Don't require failure - we want to intercept
+            // When in drawing mode, our gesture should take priority over map panning
+            if isDrawingMode {
+                // Check if the other gesture is the map's pan gesture
+                if let mapView = mapView {
+                    // Get all pan gestures on the map
+                    let mapPanGestures = mapView.gestureRecognizers?.filter { $0 is UIPanGestureRecognizer && $0 !== gestureRecognizer } ?? []
+                    if mapPanGestures.contains(where: { $0 === otherGestureRecognizer }) {
+                        return false  // Don't require failure - we want to intercept
+                    }
+                }
             }
             return false
         }
@@ -676,7 +869,10 @@ struct MapWithBoundaryOverlay: UIViewRepresentable {
         }
         
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-            guard !(annotation is MKUserLocation) else { return nil }
+            // Allow default user location annotation to show
+            if annotation is MKUserLocation {
+                return nil  // Use default blue dot
+            }
             
             // Handle tent annotation
             if let tentAnnotation = annotation as? TentAnnotation {
@@ -810,7 +1006,7 @@ struct MapWithBoundaryOverlay: UIViewRepresentable {
             tent_name: "Sample Tent",
             tent_pin: 123456,
             tent_location: (37.7749, -122.4194), // San Francisco
-            tent_capacity: 10
+            tent_required_count: 10
         ))
     }
     .modelContainer(for: [Tent.self], inMemory: true)

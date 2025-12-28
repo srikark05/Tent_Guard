@@ -24,7 +24,7 @@ final class Tent {
     var tent_pin: Int  // 6-digit random code for joining
     var tent_pin_latitude: Double  // Location latitude
     var tent_pin_longitude: Double  // Location longitude
-    var tent_capacity: Int
+    var tent_required_count: Int  // Number of people required at tent at all times
     var leader_id: [UUID]  // Array of user IDs (creators and leaders)
     var group_id: [UUID]  // Array of user IDs (members who joined via code)
     var tent_users: [Users]  // SwiftData relationship (for local queries)
@@ -52,7 +52,7 @@ final class Tent {
         tent_name: String,
         tent_pin: Int,
         tent_location: (Double, Double),
-        tent_capacity: Int,
+        tent_required_count: Int,
         leader_id: [UUID] = [],
         group_id: [UUID] = [],
         tent_users: [Users] = [],
@@ -64,7 +64,7 @@ final class Tent {
         self.tent_pin = tent_pin
         self.tent_pin_latitude = tent_location.0
         self.tent_pin_longitude = tent_location.1
-        self.tent_capacity = tent_capacity
+        self.tent_required_count = tent_required_count
         self.leader_id = leader_id
         self.group_id = group_id
         self.tent_users = tent_users

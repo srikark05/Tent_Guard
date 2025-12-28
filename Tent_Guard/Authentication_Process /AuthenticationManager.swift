@@ -248,7 +248,7 @@ final class AuthenticationManager {
         tentName: String,
         tentPin: Int,
         tentLocation: (Double, Double),
-        tentCapacity: Int,
+        tentRequiredCount: Int,
         leaderID: UUID,
         firebaseUID: String
     ) async throws -> String {
@@ -265,7 +265,8 @@ final class AuthenticationManager {
             "geolocation": geoPoint,  // Firestore GeoPoint for geospatial queries
             "tent_pin_latitude": tentLocation.0,  // Keep for backward compatibility
             "tent_pin_longitude": tentLocation.1,  // Keep for backward compatibility
-            "tent_capacity": tentCapacity,
+            "tent_required_count": tentRequiredCount,
+            "tent_capacity": tentRequiredCount,  // Keep for backward compatibility
             "leader_id": [firebaseUID],  // Array of Firebase UIDs
             "group_id": [],  // Array of Firebase UIDs
             "createdAt": Timestamp(date: Date()),
@@ -399,7 +400,7 @@ final class AuthenticationManager {
         let document = try await tentRef.getDocument()
         
         guard let data = document.data(),
-              let capacity = data["tent_capacity"] as? Int,
+              let capacity = data["tent_required_count"] as? Int ?? data["tent_capacity"] as? Int,  // Support both old and new field names
               let leaderIDs = data["leader_id"] as? [String],
               let groupIDs = data["group_id"] as? [String] else {
             throw NSError(domain: "AuthenticationManager", code: 404, userInfo: [NSLocalizedDescriptionKey: "Tent not found"])

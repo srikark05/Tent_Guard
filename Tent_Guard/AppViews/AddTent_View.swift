@@ -483,7 +483,7 @@ struct AddTent_View: View {
                     tentName: viewModel.tentName,
                     tentPin: tentPin,
                     tentLocation: (location.latitude, location.longitude),
-                    tentCapacity: capacity,
+                    tentRequiredCount: capacity,
                     leaderID: user.user_id,
                     firebaseUID: firebaseUID
                 )
@@ -502,7 +502,7 @@ struct AddTent_View: View {
                     tent_name: viewModel.tentName,
                     tent_pin: tentPin,
                     tent_location: (location.latitude, location.longitude),
-                    tent_capacity: capacity,
+                    tent_required_count: capacity,
                     leader_id: [user.user_id],  // SwiftData uses UUID
                     group_id: [],
                     tent_users: [user]
@@ -608,7 +608,7 @@ struct AddTent_View: View {
                     let tentPin = tentData["tent_pin"] as? Int ?? tentPinInt
                     let latitude = tentData["tent_pin_latitude"] as? Double ?? 0.0
                     let longitude = tentData["tent_pin_longitude"] as? Double ?? 0.0
-                    let capacity = tentData["tent_capacity"] as? Int ?? 10
+                    let capacity = tentData["tent_required_count"] as? Int ?? tentData["tent_capacity"] as? Int ?? 10  // Support both old and new field names
                     
                     // Convert Firebase UIDs to user UUIDs by looking up users
                     let leaderFirebaseUIDs = tentData["leader_id"] as? [String] ?? []
@@ -648,7 +648,7 @@ struct AddTent_View: View {
                         tent_name: tentName,
                         tent_pin: tentPin,
                         tent_location: (latitude, longitude),
-                        tent_capacity: capacity,
+                        tent_required_count: capacity,
                         leader_id: leaderIDs,
                         group_id: groupIDs,
                         tent_users: [],

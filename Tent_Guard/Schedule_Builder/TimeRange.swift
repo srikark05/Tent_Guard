@@ -1,6 +1,6 @@
 import Foundation
 
-struct TimeRange: Codable, Equatable { 
+struct TimeRange: Codable, Equatable, Hashable { 
 
     var startTime: Date
     var endTime: Date 

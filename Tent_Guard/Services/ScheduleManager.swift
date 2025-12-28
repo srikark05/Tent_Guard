@@ -50,7 +50,7 @@ class ScheduleManager {
         // Generate schedule slots
         let slots = ScheduleGenerator.generateSchedule(
             userSchedules: userSchedules,
-            tentCapacity: tent.tent_capacity,
+            tentCapacity: tent.tent_required_count,
             weekStartDate: weekStartDate
         )
         
@@ -58,7 +58,7 @@ class ScheduleManager {
         let gaps = ScheduleGenerator.detectGaps(
             slots: slots,
             weekStartDate: weekStartDate,
-            tentCapacity: tent.tent_capacity
+            tentCapacity: tent.tent_required_count
         )
         
         // Create Tent_Schedule
